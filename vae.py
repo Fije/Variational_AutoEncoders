@@ -145,6 +145,7 @@ class VAE:
         o1 = tf.reshape(outputs[1], [-1, self.rnn_dim])
 
         s = tf.matmul(o0, self.s_W)
+        s = tf.sigmoid(s)
 
         o0 = tf.tanh(o0)
         o1 = tf.tanh(o1)
