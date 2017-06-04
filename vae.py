@@ -142,7 +142,7 @@ class VAE:
         h = tf.reshape(h, [-1, h_dim])  # [B * M, h_dim]
     elif self.context == 'gate':
         o0 = tf.reshape(outputs[0], [-1, self.rnn_dim])
-        o1 = tf.reshape(outputs[0], [-1, self.rnn_dim])
+        o1 = tf.reshape(outputs[1], [-1, self.rnn_dim])
 
         s = tf.matmul(o0, self.s_W)
 
