@@ -5,22 +5,26 @@ from utils import *
 
 class VAE:
   """A simple Variational Auto Encoder."""
-  
-  def __init__(self, batch_size=8, vocabulary=None, emb_dim=32, rnn_dim=32, z_dim=16):
+
+  def __init__(self, batch_size=8, vocabulary=None, emb_dim=32, rnn_dim=32, z_dim=16, context=None):
+    # TIM: This defines the "mode" of T2: either None, in which case it is
+    #      disabled, "concat" to concatenate the e and f_prev embeddings or
+    #      "gate" to do some Wilkerisian-Joostic magic.
+    self.context = context
 
     self.batch_size = batch_size
     self.emb_dim = emb_dim
     self.rnn_dim = rnn_dim
     self.z_dim = z_dim
-    
+
     self.vocabulary = vocabulary
-    self.vocabulary_size = len(vocabulary)    
+    self.vocabulary_size = len(vocabulary)
 
     self._create_placeholders()
     self._create_weights()
     self._build_model()
     self.saver = tf.train.Saver()
-    
+
   def _create_placeholders(self):
     """We define placeholders to feed the data to TensorFlow."""
     # "None" means the batches may have a variable batch size and length.
@@ -28,10 +32,19 @@ class VAE:
 
   def _create_weights(self):
     """Create all weights for this VAE."""
+    rnn_dim = self.rnn_dim
+
+    if self.context == 'concat':
+        rnn_dim *= 2
 
     self.mu_W = tf.get_variable(
       name="mu_W", initializer=tf.random_normal_initializer(),
-      shape=[self.rnn_dim, self.z_dim])
+      shape=[rnn_dim, self.z_dim])
+
+    self.s_W = tf.get_variable(
+      name="s_W", initializer=tf.random_normal_initializer(),
+      shape=[rnn_dim, 1]
+    )
 
     self.mu_b = tf.get_variable(
       name="mu_b", initializer=tf.random_normal_initializer(),
@@ -39,12 +52,12 @@ class VAE:
 
     self.log_sig_sq_W = tf.get_variable(
       name="log_sig_sq_W", initializer=tf.random_normal_initializer(),
-      shape=[self.rnn_dim, self.z_dim])
+      shape=[rnn_dim, self.z_dim])
 
     self.log_sig_sq_b = tf.get_variable(
       name="log_sig_sq_b", initializer=tf.random_normal_initializer(),
       shape=[self.z_dim])
-    
+
     self.y_W = tf.get_variable(
       name="y_W", initializer=tf.random_normal_initializer(),
       shape=[self.z_dim, self.rnn_dim])
@@ -52,22 +65,22 @@ class VAE:
     self.y_b = tf.get_variable(
       name="y_b", initializer=tf.random_normal_initializer(),
       shape=[self.rnn_dim])
-    
+
     self.softmax_W = tf.get_variable(
       name="softmax_W", initializer=tf.random_normal_initializer(),
       shape=[self.rnn_dim, self.vocabulary_size])
-    
+
     self.softmax_b = tf.get_variable(
       name="softmax_b", initializer=tf.random_normal_initializer(),
-      shape=[self.vocabulary_size])    
+      shape=[self.vocabulary_size])
 
   def save(self, session, path="model.ckpt"):
     """Saves the model."""
     return self.saver.save(session, path)
-    
+
   def _build_model(self):
     """Builds the computational graph for our model."""
-    
+
     # Some useful values from the input data
     batch_size = tf.shape(self.x)[0]
     longest_x = tf.shape(self.x)[1]
@@ -82,12 +95,12 @@ class VAE:
     #  it does so from x's 1-hot encoding
     #  thus the first step is to embed x
 
-    # Let's create a word embedding matrix. 
+    # Let's create a word embedding matrix.
     # These are trainable parameters, so we use tf.Variable.
     embeddings = tf.get_variable(
       name="embeddings", initializer=tf.random_normal_initializer(),
-      shape=[self.vocabulary_size, self.emb_dim])    
-    
+      shape=[self.vocabulary_size, self.emb_dim])
+
     # Now we start defining our graph.
     # This looks up the embedding vector for each word.
     # Shape: [batch_size, time_steps, embedding_size]
@@ -103,26 +116,45 @@ class VAE:
     cell_bw = tf.contrib.rnn.LSTMCell(num_units=self.rnn_dim, state_is_tuple=True)
 
     # Now let's transform our word embeddings!
-    # Function `tf.nn.bidirectional_dynamic_rnn` will return a sequence of 
+    # Function `tf.nn.bidirectional_dynamic_rnn` will return a sequence of
     # hidden states for the inputs (the embeddings) that we provide.
     # We also need to give it the lengths of the sequences, otherwise
-    # it would keep updating the hidden states for sentences that have no 
+    # it would keep updating the hidden states for sentences that have no
     # more inputs.
     # `Dynamic` means that the RNN will unroll for the required number of time steps
-    # in our batch, which can be different per batch. 
-    # We do not have to tell it how many time steps to unroll. 
+    # in our batch, which can be different per batch.
+    # We do not have to tell it how many time steps to unroll.
     outputs, states = tf.nn.bidirectional_dynamic_rnn(
-      cell_fw=cell_fw, cell_bw=cell_bw, inputs=embedded, 
+      cell_fw=cell_fw, cell_bw=cell_bw, inputs=embedded,
       sequence_length=x_len, dtype=tf.float32)
-    
+
     # Now let's combine the forward and backward states,
     # so that we have 1 representation per time step.
     # It is more common to concatenate, but summing saves us some parameters.
-    h = outputs[0] + outputs[1]  # [B, M, rnn_dim]
-    h_dim = tf.shape(h)[-1]  # [rnn_dim] or [2*rnn_dim] if we concatenate
-    
-    # For z, we need mu and log sigma^2
-    h = tf.reshape(h, [-1, h_dim])  # [B * M, h_dim]
+    h = outputs[1]
+
+    if self.context == 'concat':
+        h = tf.concat([ outputs[0], outputs[1] ], axis = 2) # [B, M, rnn_dim]]
+
+        h_dim = tf.shape(h)[-1]  # [rnn_dim] or [2*rnn_dim] if we concatenate
+
+        # For z, we need mu and log sigma^2
+        h = tf.reshape(h, [-1, h_dim])  # [B * M, h_dim]
+    elif self.context == 'gate':
+        o0 = tf.reshape(outputs[0], [-1, self.rnn_dim])
+        o1 = tf.reshape(outputs[0], [-1, self.rnn_dim])
+
+        s = tf.matmul(o0, self.s_W)
+
+        o0 = tf.tanh(o0)
+        o1 = tf.tanh(o1)
+
+        h = tf.multiply(o0, s) + tf.multiply(o1, 1 - s)
+    else:
+        h_dim = tf.shape(h)[-1]  # [rnn_dim] or [2*rnn_dim] if we concatenate
+
+        # For z, we need mu and log sigma^2
+        h = tf.reshape(h, [-1, h_dim])  # [B * M, h_dim]
 
     # At this point, we have context-aware representations of each and every word
     #  we will use these representations to independently predict a vector of means
