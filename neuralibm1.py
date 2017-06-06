@@ -139,34 +139,35 @@ class NeuralIBM1Model:
     h = tf.tanh(h)                                       # non-linearity  
     h = tf.matmul(h, self.mlp_W) + self.mlp_b            # affine transformation [B * M, Vy]
 
-    ####################################################################################
-    h = outputs[1]
-
-    if self.context == 'concat':
-      h = tf.concat([outputs[0], outputs[1]], axis=2)  # [B, M, rnn_dim]]
-
-      h_dim = tf.shape(h)[-1]  # [rnn_dim] or [2*rnn_dim] if we concatenate
-
-      # For z, we need mu and log sigma^2
-      h = tf.reshape(h, [-1, h_dim])  # [B * M, h_dim]
-    elif self.context == 'gate':
-      o0 = tf.reshape(outputs[0], [-1, self.rnn_dim])
-      o1 = tf.reshape(outputs[1], [-1, self.rnn_dim])
-
-      s = tf.matmul(o0, self.s_W)
-      s = tf.sigmoid(s)
-
-      o0 = tf.tanh(o0)
-      o1 = tf.tanh(o1)
-
-      h = tf.multiply(o0, s) + tf.multiply(o1, 1 - s)
-    else:
-      h_dim = tf.shape(h)[-1]  # [rnn_dim] or [2*rnn_dim] if we concatenate
-
-      # For z, we need mu and log sigma^2
-      h = tf.reshape(h, [-1, h_dim])  # [B * M, h_dim]
-
-    ####################################################################################
+    # ####################################################################################
+    # COPY from Tims vae code for inspiration
+    # h = outputs[1]
+    #
+    # if self.context == 'concat':
+    #   h = tf.concat([outputs[0], outputs[1]], axis=2)  # [B, M, rnn_dim]]
+    #
+    #   h_dim = tf.shape(h)[-1]  # [rnn_dim] or [2*rnn_dim] if we concatenate
+    #
+    #   # For z, we need mu and log sigma^2
+    #   h = tf.reshape(h, [-1, h_dim])  # [B * M, h_dim]
+    # elif self.context == 'gate':
+    #   o0 = tf.reshape(outputs[0], [-1, self.rnn_dim])
+    #   o1 = tf.reshape(outputs[1], [-1, self.rnn_dim])
+    #
+    #   s = tf.matmul(o0, self.s_W)
+    #   s = tf.sigmoid(s)
+    #
+    #   o0 = tf.tanh(o0)
+    #   o1 = tf.tanh(o1)
+    #
+    #   h = tf.multiply(o0, s) + tf.multiply(o1, 1 - s)
+    # else:
+    #   h_dim = tf.shape(h)[-1]  # [rnn_dim] or [2*rnn_dim] if we concatenate
+    #
+    #   # For z, we need mu and log sigma^2
+    #   h = tf.reshape(h, [-1, h_dim])  # [B * M, h_dim]
+    #
+    # ####################################################################################
 
     # You could also use TF fully connected to create the MLP.
     # Then you don't have to specify all the weights and biases separately.
