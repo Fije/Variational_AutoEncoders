@@ -72,6 +72,11 @@ class NeuralIBM1Model:
         name="b", initializer=tf.zeros_initializer(),
         shape=[self.y_vocabulary_size])
 
+      self.mlp_S = tf.get_variable(
+        name="S", initializer=glorot_uniform(),
+        shape=[emb_dim, 1]
+      )
+
   def save(self, session, path="model.ckpt"):
     """Saves the model."""
     return self.saver.save(session, path)
@@ -175,11 +180,13 @@ class NeuralIBM1Model:
     elif self.mode == 'gate':
         # As a function of the embedding of the previous f, compute a gate value
         # 0 \leq s \leq 1. For this, we will use ReLU.
-        s = tf.nn.relu(xp_embedded)
+        s = tf.matmul(yp_embedded, self.s_W)
+        s = tf.sigmoid(s)
 
-        # Compute a nonlinear transformation of the embedding of e.
-        e = tf.nn.relu(y_embedded)
+        x_embedded  = tf.tanh(x_embedded)
+        yp_embedded = tf.tanh(yp_embedded)
 
+        embedded = tf.multiply(yp_embedded, s) + tf.multiply(x_embedded, 1 - s)
 
     mlp_input = tf.reshape(embedded, [batch_size * longest_x, emb_dim])
 
