@@ -165,7 +165,10 @@ class NeuralIBM1Trainer:
       # let's see if this is correct:
       # the 'loss' is the sum of the losses of each minibatch (so: loss = true_loss * epoch_steps)
       # and likelihood = - len(corpus) * true_loss = - batch_size * epoch_steps * true_loss = - batch_size * loss
-      train_likelihood = - loss * self.batch_size
+      # train_likelihood = - loss * self.batch_size
+      # train_likelihoods.append(train_likelihood)
+
+      train_likelihood = self.likelihood(mode='train')
       train_likelihoods.append(train_likelihood)
 
       dev_likelihood = self.likelihood(mode='dev')
@@ -183,11 +186,12 @@ class NeuralIBM1Trainer:
     Computes the likelihood over the entire corpus.
     Note: is this a good idea? Can we compute this?
     """
-    print('Computing dev-set likelihood')
     if mode == 'dev':
+      print('Computing dev-set likelihood')
       corpus_size = sum([1 for _ in self.dev_corpus])
       mega_batch = list(iterate_minibatches(self.dev_corpus, batch_size=corpus_size))[0]
     if mode == 'train':
+      print('Computing training-set likelihood')
       corpus_size = sum([1 for _ in self.corpus])
       mega_batch = list(iterate_minibatches(self.corpus, batch_size=corpus_size))[0]
 
