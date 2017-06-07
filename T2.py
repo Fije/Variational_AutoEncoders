@@ -72,17 +72,13 @@ class NeuralIBM1Model:
         name="b", initializer=tf.zeros_initializer(),
         shape=[self.y_vocabulary_size])
 
-      self.mlp_S = tf.get_variable(
-        name="S", initializer=glorot_uniform(),
+      self.mlp_W_s = tf.get_variable(
+        name="W_s", initializer=glorot_uniform(),
         shape=[emb_dim, 1])
 
-      # self.mlp_W_s = tf.get_variable(
-      #   name="W_s", initializer=glorot_uniform(),
-      #   shape=[emb_dim, 1])
-        
-      # self.mlp_b_s = tf.get_variable(
-      #   name="b_s", initializer=tf.zeros_initializer(),
-      #   shape=[1])
+      self.mlp_b_s = tf.get_variable(
+        name="b_s", initializer=tf.zeros_initializer(),
+        shape=[1])
 
   def save(self, session, path="model.ckpt"):
     """Saves the model."""
@@ -178,7 +174,7 @@ class NeuralIBM1Model:
 
     if self.mode == 'concat':
         # Concatenate the word embeddings.
-        # Shapes [B, M, emb_dim] and [B, M, emb_dim] give [B, M, 2*emb_dim] 
+        # Shapes [B, M, emb_dim] and [B, M, emb_dim] give [B, M, 2*emb_dim]
         # since in preprocessing we set the dim of yp  M=N (hmm... seems not correct to me -D)
         embedded = tf.concat([ x_embedded, yp_embedded ], axis = 2)
 
@@ -191,9 +187,10 @@ class NeuralIBM1Model:
     elif self.mode == 'gate':
         # As a function of the embedding of the previous f, compute a gate value
         # 0 \leq s \leq 1. For this, we will use ReLU.
-        s = tf.matmul(yp_embedded, self.s_W)
+        s = tf.map_fn(lambda x: tf.matmul(x, self.mlp_W_s), yp_embedded)
+        s = s + self.mlp_b_s
         s = tf.sigmoid(s)
-        
+
         # MISSING AFFINE TRANSFORM
         x_embedded  = tf.tanh(x_embedded)
         yp_embedded = tf.tanh(yp_embedded)
@@ -255,16 +252,16 @@ class NeuralIBM1Model:
     # LIKELIHOOD #
     # ---------- #
     # See section 1.2 of the theory, between Q3 and Q4: the cross-entropy
-    # is the same as the average negative log-likelihood. 
+    # is the same as the average negative log-likelihood.
     # That is, if sum_{s \in S} L(theta|s) is the likelihood, then the cross-entropy is
     # given by -1/S sum_{s \in S} L(theta|s).
-    # See the code below for W&J's attempt to code this by hand! You see that 
+    # See the code below for W&J's attempt to code this by hand! You see that
     # in the lines
     #
     #   y_one_hot = tf.one_hot(self.y, depth=self.y_vocabulary_size)
     #   cross_entropy = tf.reduce_sum(y_one_hot * tf.log(py_x), axis=2)
     #
-    # they have tried to only sum the probs in py_x the Vy dimension that are 
+    # they have tried to only sum the probs in py_x the Vy dimension that are
     # in the actual sentences y.
 
     # Now we define our cross entropy loss
