@@ -74,8 +74,15 @@ class NeuralIBM1Model:
 
       self.mlp_S = tf.get_variable(
         name="S", initializer=glorot_uniform(),
-        shape=[emb_dim, 1]
-      )
+        shape=[emb_dim, 1])
+
+      # self.mlp_W_s = tf.get_variable(
+      #   name="W_s", initializer=glorot_uniform(),
+      #   shape=[emb_dim, 1])
+        
+      # self.mlp_b_s = tf.get_variable(
+      #   name="b_s", initializer=tf.zeros_initializer(),
+      #   shape=[1])
 
   def save(self, session, path="model.ckpt"):
     """Saves the model."""
@@ -101,6 +108,7 @@ class NeuralIBM1Model:
     x_embedded = tf.nn.embedding_lookup(x_embeddings, self.x)
 
     # TIM: Now we need to look up the previous word in the same vocabulary.
+    # Shape: [B, N, emb_dim]
     yp_embedded = tf.nn.embedding_lookup(y_embeddings, self.yp)
 
     # 2. Now we define the generative model P(Y | X=x)
@@ -170,10 +178,13 @@ class NeuralIBM1Model:
 
     if self.mode == 'concat':
         # Concatenate the word embeddings.
+        # Shapes [B, M, emb_dim] and [B, M, emb_dim] give [B, M, 2*emb_dim] 
+        # since in preprocessing we set the dim of yp  M=N (hmm... seems not correct to me -D)
         embedded = tf.concat([ x_embedded, yp_embedded ], axis = 2)
 
         # Pass the concatenated embedding through an affine transformation and
         # an elementwise nonlinearity (tanh).
+        # MISSING AFFINE TRANSFORM
         embedding = tf.tanh(embedded)
 
         emb_dim += self.emb_dim
@@ -239,6 +250,22 @@ class NeuralIBM1Model:
     cross_entropy = tf.reduce_sum(cross_entropy * y_mask, axis=1)
     cross_entropy = tf.reduce_mean(cross_entropy, axis=0)
 
+    # ---------- #
+    # LIKELIHOOD #
+    # ---------- #
+    # See section 1.2 of the theory, between Q3 and Q4: the cross-entropy
+    # is the same as the average negative log-likelihood. 
+    # That is, if sum_{s \in S} L(theta|s) is the likelihood, then the cross-entropy is
+    # given by -1/S sum_{s \in S} L(theta|s).
+    # See the code below for W&J's attempt to code this by hand! You see that 
+    # in the lines
+    #
+    #   y_one_hot = tf.one_hot(self.y, depth=self.y_vocabulary_size)
+    #   cross_entropy = tf.reduce_sum(y_one_hot * tf.log(py_x), axis=2)
+    #
+    # they have tried to only sum the probs in py_x the Vy dimension that are 
+    # in the actual sentences y.
+
     # Now we define our cross entropy loss
     # Play with this if you want to try and replace TensorFlow's CE function.
     # Disclaimer: untested code
@@ -246,6 +273,9 @@ class NeuralIBM1Model:
 #     cross_entropy = tf.reduce_sum(y_one_hot * tf.log(py_x), axis=2)  # [B, N]
 #     cross_entropy = tf.reduce_sum(cross_entropy * y_mask, axis=1)    # [B]
 #     cross_entropy = -tf.reduce_mean(cross_entropy)  # scalar
+#     Daan's:
+#     likelihood = tf.reduce_sum(cross_entropy * y_mask)    # scalar
+
 
     self.pa_x = pa_x
     self.py_x = py_x
