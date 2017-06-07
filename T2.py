@@ -180,10 +180,9 @@ class NeuralIBM1Model:
 
         # Pass the concatenated embedding through an affine transformation and
         # an elementwise nonlinearity (tanh).
-        # MISSING AFFINE TRANSFORM
-        embedding = tf.tanh(embedded)
-
+        # embedding = tf.tanh(embedded)
         emb_dim += self.emb_dim
+        
     elif self.mode == 'gate':
         # As a function of the embedding of the previous f, compute a gate value
         # 0 \leq s \leq 1. For this, we will use ReLU.
@@ -191,7 +190,6 @@ class NeuralIBM1Model:
         s = s + self.mlp_b_s
         s = tf.sigmoid(s)
 
-        # MISSING AFFINE TRANSFORM
         x_embedded  = tf.tanh(x_embedded)
         yp_embedded = tf.tanh(yp_embedded)
 
