@@ -1,15 +1,22 @@
 import gzip
+import numpy as np
 
 
-def smart_reader(path, encoding='utf-8', delimiter=' '):
+def smart_reader(path, encoding='utf-8', delimiter=' ',  max_num=np.inf):
   """Read in a gzipped file and return line by line"""
   if path.endswith(".gz"):
     with gzip.open(path, mode='r') as f:
-      for line in f:
-        yield str(line, encoding=encoding).strip().split(delimiter)
+      for k, line in enumerate(f):
+        if k>max_num:
+          break
+        else:
+          yield str(line, encoding=encoding).strip().split(delimiter)
   else:
     with open(path, encoding=encoding) as f:
-      for line in f:
+      for k, line in enumerate(f):
+        if k>max_num:
+          break
+        else:
           yield line.strip().split(delimiter)    
 
 
