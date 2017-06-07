@@ -73,6 +73,7 @@ class NeuralIBM1Trainer:
     train_likelihoods = []
     dev_AERs = []
     test_AERs = []
+    other_likelihoods = []
 
     steps = 0
 
@@ -165,8 +166,8 @@ class NeuralIBM1Trainer:
       # let's see if this is correct:
       # the 'loss' is the sum of the losses of each minibatch (so: loss = true_loss * epoch_steps)
       # and likelihood = - len(corpus) * true_loss = - batch_size * epoch_steps * true_loss = - batch_size * loss
-      # train_likelihood = - loss * self.batch_size
-      # train_likelihoods.append(train_likelihood)
+      other_likelihood = - loss * self.batch_size
+      other_likelihoods.append(other_likelihood)
 
       train_likelihood = self.likelihood(mode='train')
       train_likelihoods.append(train_likelihood)
@@ -178,7 +179,7 @@ class NeuralIBM1Trainer:
       save_path = self.model.save(self.session, path="model.ckpt")
       print("Model saved in file: %s" % save_path)
 
-    return dev_AERs, test_AERs, train_likelihoods, dev_likelihoods
+    return dev_AERs, test_AERs, train_likelihoods, dev_likelihoods, other_likelihoods
 
 
   def likelihood(self, mode='dev'):
@@ -211,9 +212,8 @@ class NeuralIBM1Trainer:
 
     yp = yp[:, : x.shape[1]]
 
-    # input to the TF graph
     feed_dict = {
-      self.lr_ph:    lr_t,
+      # self.lr_ph:    lr_t,
       self.model.x:  x,
       self.model.yp: yp,
       self.model.y:  y
@@ -221,14 +221,15 @@ class NeuralIBM1Trainer:
 
     # things we want TF to return to us from the computation
     fetches = {
-      "optimizer"   : self.optimizer,
+      # "optimizer"   : self.optimizer,
       "loss"        : self.model.loss,
-      "acc_correct" : self.model.accuracy_correct,
-      "acc_total"   : self.model.accuracy_total,
-      "pa_x"        : self.model.pa_x,
-      "py_xa"       : self.model.py_xa,
-      "py_x"        : self.model.py_x
+      # "acc_correct" : self.model.accuracy_correct,
+      # "acc_total"   : self.model.accuracy_total,
+      # "pa_x"        : self.model.pa_x,
+      # "py_xa"       : self.model.py_xa,
+      # "py_x"        : self.model.py_x
     }
+
 
     res = self.session.run(fetches, feed_dict=feed_dict)
 
