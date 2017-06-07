@@ -166,12 +166,13 @@ class NeuralIBM1Trainer:
       # let's see if this is correct:
       # the 'loss' is the sum of the losses of each minibatch (so: loss = true_loss * epoch_steps)
       # and likelihood = - len(corpus) * true_loss = - batch_size * epoch_steps * true_loss = - batch_size * loss
-      other_likelihood = - loss * self.batch_size
-      other_likelihoods.append(other_likelihood)
+      # other_likelihood = - loss * self.batch_size
+      # other_likelihoods.append(other_likelihood)
 
+      # evaluate training-set likelihoods
       train_likelihood = self.likelihood(mode='train')
       train_likelihoods.append(train_likelihood)
-
+      # evaluate dev-set likelihoods
       dev_likelihood = self.likelihood(mode='dev')
       dev_likelihoods.append(dev_likelihood)
 
@@ -179,7 +180,7 @@ class NeuralIBM1Trainer:
       save_path = self.model.save(self.session, path="model.ckpt")
       print("Model saved in file: %s" % save_path)
 
-    return dev_AERs, test_AERs, train_likelihoods, dev_likelihoods, other_likelihoods
+    return dev_AERs, test_AERs, train_likelihoods, dev_likelihoods
 
 
   def likelihood(self, mode='dev'):
@@ -187,55 +188,54 @@ class NeuralIBM1Trainer:
     Computes the likelihood over the entire corpus.
     Note: is this a good idea? Can we compute this?
     """
+    batch_size = 1000
+
     if mode == 'dev':
       print('Computing dev-set likelihood')
       corpus_size = sum([1 for _ in self.dev_corpus])
-      mega_batch = list(iterate_minibatches(self.dev_corpus, batch_size=corpus_size))[0]
+      # mega_batch = list(iterate_minibatches(self.dev_corpus, batch_size=corpus_size))[0]
+      batches = iterate_minibatches(self.dev_corpus, batch_size=corpus_size)
     if mode == 'train':
       print('Computing training-set likelihood')
-      corpus_size = sum([1 for _ in self.corpus])
-      mega_batch = list(iterate_minibatches(self.corpus, batch_size=corpus_size))[0]
+      # corpus_size = sum([1 for _ in self.corpus])
+      # mega_batch = list(iterate_minibatches(self.corpus, batch_size=corpus_size))[0]
+      batches = iterate_minibatches(self.corpus, batch_size=batch_size)
 
-    x, y = prepare_data(mega_batch, self.model.x_vocabulary,
-                        self.model.y_vocabulary)
-    
-    # Dynamic learning rate, cf. Bottou (2012), Stochastic gradient descent tricks.
-    lr_t = 0
+    loss = 0
+    for k, batch in enumerate(batches, 1):
+      x, y = prepare_data(batch, self.model.x_vocabulary,
+                            self.model.y_vocabulary)
+        
+      # Dynamic learning rate, cf. Bottou (2012), Stochastic gradient descent tricks.
+      lr_t = 0
 
-    # TIM: this line removes the last column (because the last word does
-    #      not preceed any other word) and adds a 0-column at the left end
-    #      because the first word has no predecessor.
-    yp = np.hstack((np.zeros((y.shape[0], 1)), y[:, : -1]))
+      # TIM: this line removes the last column (because the last word does
+      #      not preceed any other word) and adds a 0-column at the left end
+      #      because the first word has no predecessor.
+      yp = np.hstack((np.zeros((y.shape[0], 1)), y[:, : -1]))
 
-    while yp.shape[1] < x.shape[1]:
-        yp = np.hstack((yp, np.zeros((y.shape[0], 1))))
+      while yp.shape[1] < x.shape[1]:
+          yp = np.hstack((yp, np.zeros((y.shape[0], 1))))
 
-    yp = yp[:, : x.shape[1]]
+      yp = yp[:, : x.shape[1]]
 
-    feed_dict = {
-      # self.lr_ph:    lr_t,
-      self.model.x:  x,
-      self.model.yp: yp,
-      self.model.y:  y
-    }
+      feed_dict = {
+        self.model.x:  x,
+        self.model.yp: yp,
+        self.model.y:  y
+      }
 
-    # things we want TF to return to us from the computation
-    fetches = {
-      # "optimizer"   : self.optimizer,
-      "loss"        : self.model.loss,
-      # "acc_correct" : self.model.accuracy_correct,
-      # "acc_total"   : self.model.accuracy_total,
-      # "pa_x"        : self.model.pa_x,
-      # "py_xa"       : self.model.py_xa,
-      # "py_x"        : self.model.py_x
-    }
+      # things we want TF to return to us from the computation
+      fetches = {
+        "loss"  : self.model.loss,
+      }
 
+      res = self.session.run(fetches, feed_dict=feed_dict)
 
-    res = self.session.run(fetches, feed_dict=feed_dict)
+      loss += res["loss"]
 
-    loss = res["loss"]
-
-    likelihood = - loss * corpus_size
+    # likelihood = - loss * corpus_size
+    likelihood = - loss * batch_size # now loss is
 
     return likelihood
 

@@ -193,7 +193,8 @@ class NeuralIBM1Model:
         # 0 \leq s \leq 1. For this, we will use ReLU.
         s = tf.matmul(yp_embedded, self.s_W)
         s = tf.sigmoid(s)
-
+        
+        # MISSING AFFINE TRANSFORM
         x_embedded  = tf.tanh(x_embedded)
         yp_embedded = tf.tanh(yp_embedded)
 
