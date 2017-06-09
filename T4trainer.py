@@ -111,6 +111,8 @@ class NeuralIBM1Trainer:
         fetches = {
           "optimizer"   : self.optimizer,
           "loss"        : self.model.loss,
+          "kl"          : self.model.kl,
+          "ce"          : self.model.ce,
           "acc_correct" : self.model.accuracy_correct,
           "acc_total"   : self.model.accuracy_total,
           "pa_x"        : self.model.pa_x,
@@ -152,8 +154,8 @@ class NeuralIBM1Trainer:
         epoch_steps += 1
 
         if batch_id % 100 == 0:
-          print("Iter {:5d} loss {:6f} accuracy {:1.2f} lr {:1.6f}".format(
-            batch_id, res["loss"], batch_accuracy, lr_t))
+          print("Iter {:5d} loss {:6f} ce {:1.6f} kl {:2.6f} accuracy {:1.2f} lr {:2.6f}".format(
+            batch_id, res["loss"], res["ce"], res["kl"], batch_accuracy, lr_t))
 
       # evaluate on development and test set
       val_aer, val_acc = self.model.evaluate(self.dev_corpus, self.dev_wa)

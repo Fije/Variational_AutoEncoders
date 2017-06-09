@@ -91,35 +91,35 @@ class NeuralIBM1Model:
       # layer for laten gate S, P(S|Fprev)
       self.a_W = tf.get_variable(
         name="a_W", initializer=tf.random_normal_initializer(),
-        shape=[mlp_dim, self.z_dim])
+        shape=[self.mlp_dim, 1])
 
       self.a_b = tf.get_variable(
         name="a_b", initializer=tf.random_normal_initializer(),
-        shape=[self.z_dim])
+        shape=[1])
 
       self.b_W = tf.get_variable(
         name="b_W", initializer=tf.random_normal_initializer(),
-        shape=[mlp_dim, self.z_dim])
+        shape=[self.mlp_dim, 1])
 
       self.b_b = tf.get_variable(
         name="b_b", initializer=tf.random_normal_initializer(),
-        shape=[self.z_dim])
+        shape=[1])
 
       self.alpha_W = tf.get_variable(
         name="alpha_W", initializer=tf.random_normal_initializer(),
-        shape=[mlp_dim, self.z_dim])
+        shape=[self.mlp_dim, 1])
 
       self.alpha_b = tf.get_variable(
         name="alpha_b", initializer=tf.random_normal_initializer(),
-        shape=[self.z_dim])
+        shape=[1])
 
       self.beta_W = tf.get_variable(
         name="beta_W", initializer=tf.random_normal_initializer(),
-        shape=[mlp_dim, self.z_dim])
+        shape=[self.mlp_dim, 1])
 
       self.beta_b = tf.get_variable(
         name="beta_b", initializer=tf.random_normal_initializer(),
-        shape=[self.z_dim])
+        shape=[1])
 
 
   def save(self, session, path="model.ckpt"):
@@ -211,87 +211,45 @@ class NeuralIBM1Model:
     # The MLP
 
     # This is for P(F|E), translation t
-    mlp_input = tf.reshape(x_embedded, [batch_size * longest_x, emb_dim])
+    mlp_input = tf.reshape(x_embedded, [batch_size * longest_x, emb_dim], name='x-emb-reshape')
     h_t = tf.matmul(mlp_input, self.mlp_Wt_, name='x1') + self.mlp_bt_ # Shape [B*M, emb_dim]
     h_t  = tf.tanh(h_t)
     h_t = tf.matmul(h_t, self.mlp_W_t, name='x2') + self.mlp_b_t # Shape [B*M, emb_dim]
     # Now we perform a softmax which operates on a per-row basis.
     py_xa = tf.nn.softmax(h_t)
     # This is P(F|E)
-    py_xa = tf.reshape(py_xa, [batch_size, longest_x, self.y_vocabulary_size]) # Shape [B, M, Vy]
+    py_xa = tf.reshape(py_xa, [batch_size, longest_x, self.y_vocabulary_size], name='py_xa-emb-reshape') # Shape [B, M, Vy]
 
     # This is for P(F|Fprev) and P(C|Fprev), insertion i and collocation c
     # Note: Shared first layer!
-    mlp_input = tf.reshape(yp_embedded, [batch_size * longest_y, emb_dim])
+    mlp_input = tf.reshape(yp_embedded, [batch_size * longest_y, emb_dim], name='yp-emb-reshape')
     h_is = tf.matmul(mlp_input, self.mlp_Wis_, name='y1') + self.mlp_bis_ # Shape [B*N, emb_dim]
     h_is  = tf.tanh(h_is)
     # This is P(F|Fprev) insertion i
     h_i = tf.matmul(h_is, self.mlp_W_i, name='y2') + self.mlp_b_i # Shape [B*N, emb_dim]
     py_y  = tf.nn.softmax(h_i) # Shape: [B*N, Vy]
-    py_y = tf.reshape(py_y, [batch_size, longest_y, self.y_vocabulary_size]) # Shape [B, N, Vy]
-    # This is s(Fprev) for P(C|Fprev) = Bern(s(Fprev))
-    h_s = tf.matmul(h_is, self.mlp_W_s, name='3')
-    h_s = h_s + self.mlp_b_s
-    s = tf.sigmoid(h_s)
-    s = tf.squeeze(s) # get rid of trainling 1-dimension
-    s = tf.reshape(s, [batch_size, longest_y])
-
-    alpha = tf.matmul(h_is, self.alpha_W) + self.alpha_b  # [B * M, z_dim]
-    beta = tf.matmul(h_is, self.beta_W) + self.beta_b  # [B * M, z_dim]
-    # IMPORTANT: used for sampling gate values s:
-    a = tf.matmul(h_is, self.a_W) + self.a_b  # [B * M, z_dim]
-    b = tf.matmul(h_is, self.b_W) + self.b_b  # [B * M, z_dim]
-
-
-    # Our sampled S is a **deterministic** function of the random noise (u)
-    # this pushes all sources of non-determinism out of the computational graph
-    # which is very convenient
-    # In formula: s = (1-u^{1/alpha})^{1/beta}
-    u = tf.random_uniform(tf.shape(z_b), minval=0, maxval=1, dtype=tf.float32)  # [B * M, h_dim]
-    s = tf.pow(tf.add(-tf.pow(u, tf.reciprocal(alpha)), 1), tf.reciprocal(beta)) # hopefully this works
+    py_y = tf.reshape(py_y, [batch_size, longest_y, self.y_vocabulary_size], name='py_y-emb-reshape') # Shape [B, N, Vy]
+    
+    # This for the prior p(Z) = Beta(a,b)
+    a = tf.matmul(h_is, self.a_W) + self.a_b  # [B*M, 1]
+    a = tf.exp(a)
+    a = tf.squeeze(a)
+    b = tf.matmul(h_is, self.b_W) + self.b_b  # [B*M, 1]
+    b = tf.exp(b)
+    b = tf.squeeze(b)
+    # This is for the approxiation of the posterior p(Z|X) using Kuma(alpha, beta)
+    alpha = tf.matmul(h_is, self.alpha_W) + self.alpha_b  # [B*M, 1]
+    alpha = tf.exp(alpha)
+    alpha = tf.squeeze(alpha)
+    beta = tf.matmul(h_is, self.beta_W) + self.beta_b  # [B*M, 1]
+    beta = tf.exp(beta)
+    beta = tf.squeeze(beta)
 
 
     # ##############################################
     # This is the *generative* network
     #  it conditions on our sampled z to predict the parameters of a Categorical over the vocabulary
 
-    # Here we employ one non-linear layer (but this is optional)
-    ### CHANGE ###
-    # h_dec = tf.matmul(s, self.y_W) + self.y_b  # [B * M, h_dim]
-    # OR: (confusion!)
-    # h_dec = tf.matmul(s_ELBO, self.y_W) + self.y_b  # [B * M, h_dim]
-    ###
-    h_dec = tf.matmul(z, self.y_W) + self.y_b  # [B * M, h_dim]
-    h_dec = tf.tanh(h_dec)  # Shape: [B * M, h_dim]
-    # and these are our logits (the input to a softmax)
-    # tensorflow prefers to use logits to compute the cross entropy loss
-    # but see that this is just a code optimisation probably motivated solely by numerical stability
-    logits = tf.matmul(h_dec, self.softmax_W) + self.softmax_b  # Shape: [B * M, Vx]
-
-    # ###############################################
-    # This is the MC estimate of the (negative) ELBO (because we do minimisation here)
-    #  it includes the MC estimate of the negative log likelihood
-
-    # Sample gate value s. note weird tf construction for beta disrtb.
-    # see https://www.tensorflow.org/api_docs/python/tf/contrib/distributions/Beta
-    # Beta = tf.contrib.distributions.Beta(a,b) # constructs distributions same shape as a (and b)
-    # s = Beta.sample() # generates a single sample for each of the distributions
-
-    euler = 0.5772156649
-    approx = tf.add_n([tf.reciprocal(m + alpha*beta) * Beta(m * tf.reciprocal(alpha), beta)) for m in range(1,4)])
-    first = tf.multiply(tf.div(alpha - a, alpha), -euler - tf.digamma(beta) - tf.reciprocal(beta))
-    second = tf.log(tf.multiply(alpha, beta)) + tf.log(1) - tf.multiply(beta - 1, tf.reciprocal(beta)) # Beta(a,b) missing! Cannot find it in TF...
-    third = tf.multiply(tf.multiply(b - 1, beta), approx)
-    kl = first + second + third
-
-    kl = tf.reshape(kl, tf.shape(self.x))  # reshape back to [B, M]
-    # we sum KL of actual words in a sentence
-    #  (that's why we multiply timesteps by a mask)
-    #  and take mean over samples
-    self.kl = tf.reduce_mean(tf.reduce_sum(kl * x_mask, axis=1), axis=0)
-
-    # The total loss is the negative MC estimate of the ELBO
-    self.loss = self.ce + self.kl
 
     # #########################################################
     # Prediction
@@ -337,13 +295,42 @@ class NeuralIBM1Model:
     # Note: P(y|x) = prod_j p(y_j|x) = prod_j sum_aj p(aj|m)p(y_j|x_aj)
     py_x = tf.matmul(pa_x, py_xa, name='3')  # Shape: [B, N, Vy]
 
+    
+    # ###############################################
+    # This is the MC estimate of the (negative) ELBO (because we do minimisation here)
+    #  it includes the MC estimate of the negative log likelihood
+
+    # Sample gate value s. note weird tf construction for beta disrtb.
+    # see https://www.tensorflow.org/api_docs/python/tf/contrib/distributions/Beta
+    # Beta = tf.contrib.distributions.Beta(a,b) # constructs distributions same shape as a (and b)
+    # s = Beta.sample() # generates a single sample for each of the distributions
+
+    euler = 0.5772156649
+    # approx = tf.add_n([tf.reciprocal(m + alpha*beta) * Beta(m * tf.reciprocal(alpha), beta) for m in range(1,10)])
+    approx = tf.add_n([tf.reciprocal(m + alpha*beta) * 1 for m in range(1,10)])
+    first = tf.multiply(tf.div(alpha - a, alpha+0.0001), -euler - tf.digamma(beta) - tf.reciprocal(beta+0.0001))
+    
+    second = tf.log(tf.multiply(alpha, beta)) - tf.multiply(beta - 1, tf.reciprocal(beta+0.0001)) # Beta(a,b) missing! Cannot find it in TF...
+    
+
+    third = tf.multiply(tf.multiply(b - 1, beta), approx)
+    kl = first + second + third
+    kl = tf.reshape(kl, tf.shape(self.y), name='KL-reshape')  # reshape back to [B, N]
+    self.kl = tf.reduce_mean(tf.reduce_sum(kl * y_mask, axis=1), axis=0)
+
+    # Our sampled S is a **deterministic** function of the random noise (u)
+    # this pushes all sources of non-determinism out of the computational graph
+    # which is very convenient
+    # In formula: s = (1-u^{1/alpha})^{1/beta}
+    u = tf.random_uniform(tf.shape(alpha), minval=0, maxval=1, dtype=tf.float32)  # [B*N]
+    s = tf.pow(tf.add(-tf.pow(u, tf.reciprocal(alpha)), 1), tf.reciprocal(beta)) # hopefully this works
     # Read the equation in Theory 2.2 carefully. Then you will see that this is correct.
+    s = tf.reshape(s, [batch_size, longest_y], name='s_reshape')
     s_tiled = tf.expand_dims(s, 2) # Shape: [B, N, 1]
     s_tiled = tf.tile(s_tiled, [1, 1, self.y_vocabulary_size]) # Shape: [B, N, Vy]
+    
     # Here we marginalise over S
-    py_x = tf.multiply(s_tiled, py_x, name='s1') + tf.multiply(1-s_tiled, py_y, name='s2')
-
-
+    py_x = tf.multiply(s_tiled, py_x, name='s1') + tf.multiply(1-s_tiled, py_y, name='s2') # Shape [B, N, Vy]
 
     # This calculates the accuracy, i.e. how many predictions we got right.
     predictions = tf.argmax(py_x, axis=2)
@@ -354,21 +341,22 @@ class NeuralIBM1Model:
     acc = acc_correct / acc_total
 
     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-      labels=tf.reshape(self.y, [-1]),
+      labels=tf.reshape(self.y, [-1], name='y_reshape'),
       logits=tf.log(tf.reshape(py_x,[batch_size * longest_y, self.y_vocabulary_size], name='lastfucker')),
       name="logits"
     )
-    cross_entropy = tf.reshape(cross_entropy, [batch_size, longest_y])
+    cross_entropy = tf.reshape(cross_entropy, [batch_size, longest_y], name='ce-reshape')
     cross_entropy = tf.reduce_sum(cross_entropy * y_mask, axis=1)
-    cross_entropy = tf.reduce_mean(cross_entropy, axis=0)
-
+    self.ce = tf.reduce_mean(cross_entropy, axis=0)
+    
+    # The total loss is the negative MC estimate of the ELBO
+    self.loss = self.ce + self.kl
 
     self.pa_x = pa_x
     self.py_x = py_x
     self.py_y = py_y
     self.py_xa = py_xa
     self.s = s
-    self.loss = cross_entropy
     self.predictions = predictions
     self.accuracy = acc
     self.accuracy_correct = tf.cast(acc_correct, tf.int64)
