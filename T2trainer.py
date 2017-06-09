@@ -48,6 +48,7 @@ class NeuralIBM1Trainer:
         smart_reader(train_e_path,max_num=max_num),
         smart_reader(train_f_path,max_num=max_num),
         max_length=max_length))
+    # print("Training on {} sentences".format(len(self.corpus)))
     self.dev_corpus = list(bitext_reader(
         smart_reader(dev_e_path),
         smart_reader(dev_f_path)))
@@ -81,7 +82,7 @@ class NeuralIBM1Trainer:
 
       # shuffle data set every epoch
       print("Shuffling training data")
-      random.shuffle(self.corpus)
+      # random.shuffle(self.corpus)
 
       loss = 0.0
       accuracy_correct = 0
@@ -149,35 +150,35 @@ class NeuralIBM1Trainer:
         }
 
         res = self.session.run(fetches, feed_dict=feed_dict)
-        # print(y)
-        # print()
-        # print(res["yp"])
-        # print()
-        # pprint(res["yp_shaped1"])
-        # print("x-shaped")
-        # pprint(res["xp_shaped"])
-        # print()
-        # pprint(res["yp_embedded"])
-        # print()
-        # print()
-        # print(x)
-        # print()
-        # pprint(res["xp_shaped1"])
-        # print()
-        # pprint(res["xp_shaped2"])
-        # print()
-        # print("y-shaped")
-        # pprint(res["yp_shaped"])
-        # print()
-        # pprint(res["xp_embedded"])
-        # print()
-        # print("concatted")
-        # print(res["concatted"].shape)
-        # print(res["xp_shaped"].shape)
-        # print(res["xp_embedded"].shape)
-        # print(res["embedded"].shape)
-        # print()
-        # print()
+        print(y)
+        print()
+        print(res["yp"])
+        print()
+        pprint(res["yp_shaped1"])
+        print("y-shaped")
+        pprint(res["yp_shaped"])
+        print()
+        pprint(res["yp_embedded"])
+        print()
+        print()
+        print(x)
+        print()
+        pprint(res["xp_shaped1"])
+        print()
+        pprint(res["xp_shaped2"])
+        print()
+        print("x-shaped")
+        pprint(res["xp_shaped"])
+        print()
+        pprint(res["xp_embedded"])
+        print()
+        print("concatted")
+        print(res["concatted"].shape)
+        print(res["xp_shaped"].shape)
+        print(res["xp_embedded"].shape)
+        print(res["embedded"].shape)
+        print()
+        print()
         loss += res["loss"]
         accuracy_correct += res["acc_correct"]
         accuracy_total += res["acc_total"]

@@ -265,7 +265,6 @@ class NeuralIBM1Model:
     #   py_x  Shape: [B, N, Vy]
     #
     # Note: P(y|x) = prod_j p(y_j|x) = prod_j sum_aj p(aj|m)p(y_j|x_aj)
-    print(tf.shape(pa_x))
     py_x = tf.matmul(pa_x, py_xa, name='3')  # Shape: [B, N, Vy]
 
     # This calculates the accuracy, i.e. how many predictions we got right.
@@ -389,12 +388,11 @@ class NeuralIBM1Model:
     probabilities = np.zeros((batch_size, longest_y), dtype="float32")
 
     for b, sentence in enumerate(y):
-      fprev = 0
       for j, french_word in enumerate(sentence):
         if french_word == 0:  # Padding
           break
-
-        # index by previous f word. Keep track.
+        fprev = j
+        # Index by previous f word. Keep track.
         # py_xa      Shape: [B, *N*M*, Vy]
         # probs = py_xa[b,:,y[b,j]] # y[b,j] means only the word f_j in the sentence b
         fprevs = [fprev + (k * longest_y) for k in range(longest_x)]
@@ -405,6 +403,5 @@ class NeuralIBM1Model:
         alignments[b, j] = a_j
         probabilities[b, j] = p_j
 
-        fprev = j
 
     return alignments, probabilities, acc_correct, acc_total
