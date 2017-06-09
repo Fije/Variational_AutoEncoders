@@ -126,7 +126,7 @@ class NeuralIBM1Model:
     # Tile x_embedded to become [B, N*M, emb_dim] by doing 
     # e_j -> ej,...,e_j N times for each j
     xp_shaped1 = tf.reshape(self.x, [batch_size*longest_x, 1])              # Shape: [B*N, 1]
-    xp_shaped2 = tf.tile(xp_shaped1, [1, longest_y])                        # Shape: [B*N, M]
+    xp_shaped2 = tf.tile(xp_shaped1, [1, longest_y])                        # Shape: [B*M, N]
     xp_shaped = tf.reshape(xp_shaped2, [batch_size*longest_x*longest_y, 1]) # Shape: [B*M*N, 1]
     self.xp_shaped1 = xp_shaped1
     self.xp_shaped2 = xp_shaped2
@@ -360,20 +360,9 @@ class NeuralIBM1Model:
   def get_viterbi(self, x, y):
     """Returns the Viterbi alignment for (x, y)"""
 
-    # TODO: this should not actually use y itself! Instead, we need to retrieve
-    #       each previous prediction from the NN and then feed it to when
-    #       predicting the next word.
-    yp = np.zeros((y.shape[0], 1)) # , y[:, : -1]))
-
-    while yp.shape[1] < x.shape[1]:
-        yp = np.hstack((yp, np.zeros((y.shape[0], 1))))
-
-    yp = yp[:, : x.shape[1]]
-
     feed_dict = {
       self.x: x, # English
       self.y: y, # French
-      self.yp: yp
     }
 
     # run model on this input
