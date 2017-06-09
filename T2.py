@@ -238,11 +238,6 @@ class NeuralIBM1Model:
     h = tf.tanh(h)                                       # non-linearity
     h = tf.matmul(h, self.mlp_W, name='2') + self.mlp_b            # affine transformation [B * M, Vy]
 
-    # You could also use TF fully connected to create the MLP.
-    # Then you don't have to specify all the weights and biases separately.
-    #h = tf.contrib.layers.fully_connected(mlp_input, self.mlp_dim, activation_fn=tf.tanh, trainable=True)
-    #h = tf.contrib.layers.fully_connected(h, self.y_vocabulary_size, activation_fn=None, trainable=True)
-
     # Now we perform a softmax which operates on a per-row basis.
     py_xa = tf.nn.softmax(h)
     # py_xa = tf.reshape(py_xa, [batch_size, longest_x, self.y_vocabulary_size])
@@ -284,33 +279,6 @@ class NeuralIBM1Model:
     cross_entropy = tf.reduce_sum(cross_entropy * y_mask, axis=1)
     cross_entropy = tf.reduce_mean(cross_entropy, axis=0)
 
-    # ---------- #
-    # LIKELIHOOD #
-    # ---------- #
-    # See section 1.2 of the theory, between Q3 and Q4: the cross-entropy
-    # is the same as the average negative log-likelihood.
-    # That is, if sum_{s \in S} L(theta|s) is the likelihood, then the cross-entropy is
-    # given by -1/S sum_{s \in S} L(theta|s).
-    # See the code below for W&J's attempt to code this by hand! You see that
-    # in the lines
-    #
-    #   y_one_hot = tf.one_hot(self.y, depth=self.y_vocabulary_size)
-    #   cross_entropy = tf.reduce_sum(y_one_hot * tf.log(py_x), axis=2)
-    #
-    # they have tried to only sum the probs in py_x the Vy dimension that are
-    # in the actual sentences y.
-
-    # Now we define our cross entropy loss
-    # Play with this if you want to try and replace TensorFlow's CE function.
-    # Disclaimer: untested code
-#     y_one_hot = tf.one_hot(self.y, depth=self.y_vocabulary_size)     # [B, N, Vy]
-#     cross_entropy = tf.reduce_sum(y_one_hot * tf.log(py_x), axis=2)  # [B, N]
-#     cross_entropy = tf.reduce_sum(cross_entropy * y_mask, axis=1)    # [B]
-#     cross_entropy = -tf.reduce_mean(cross_entropy)  # scalar
-#     Daan's:
-#     likelihood = tf.reduce_sum(cross_entropy * y_mask)    # scalar
-
-
     self.pa_x = pa_x
     self.py_x = py_x
     self.py_xa = py_xa
@@ -339,19 +307,11 @@ class NeuralIBM1Model:
       accuracy_correct += acc_correct
       accuracy_total += acc_total
 
-#       if batch_id == 0:
-#         print(batch[0])
-#      s = 0
-
       for alignment, N, (sure, probable) in zip(align, y_len, ref_iterator):
         # the evaluation ignores NULL links, so we discard them
         # j is 1-based in the naacl format
         pred = set((aj, j) for j, aj in enumerate(alignment[:N], 1) if aj > 0)
         metric.update(sure=sure, probable=probable, predicted=pred)
- #       print(batch[s])
- #       print(alignment[:N])
- #       print(pred)
- #       s +=1
 
     accuracy = accuracy_correct / float(accuracy_total)
     return metric.aer(), accuracy
@@ -381,9 +341,6 @@ class NeuralIBM1Model:
         if french_word == 0:  # Padding
           break
         fprev = j
-        # Index by previous f word. Keep track.
-        # py_xa      Shape: [B, *N*M*, Vy]
-        # probs = py_xa[b,:,y[b,j]] # y[b,j] means only the word f_j in the sentence b
         fprevs = [fprev + (k * longest_y) for k in range(longest_x)]
         probs = py_xa[b, fprevs, y[b,j]] # y[b,j] means only the word f_j in the sentence b
         a_j = probs.argmax()

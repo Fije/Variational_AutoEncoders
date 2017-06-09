@@ -334,7 +334,7 @@ class NeuralIBM1Model:
         if c == 1: # then we `insert` (i.e. NULL align - see NLP2 blog post)
             # if b in range(20): print('Null aligned')
             a_j = 0 # NULL align
-            p_j = 1
+            p_j = 1 # not important
 
         alignments[b, j] = a_j
         probabilities[b, j] = p_j
