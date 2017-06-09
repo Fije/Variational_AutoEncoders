@@ -98,7 +98,7 @@ class NeuralIBM1Trainer:
 
         x, y = prepare_data(batch, self.model.x_vocabulary,
                             self.model.y_vocabulary,
-                            add_xnull=True)
+                            add_xnull=False) # No NULL needed. Insertion takes care of that.
 
         # input to the TF graph
         feed_dict = {

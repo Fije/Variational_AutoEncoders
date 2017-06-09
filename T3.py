@@ -235,7 +235,8 @@ class NeuralIBM1Model:
     # Read the equation in Theory 2.2 carefully. Then you will see that this is correct.
     s_tiled = tf.expand_dims(s, 2) # Shape: [B, N, 1]
     s_tiled = tf.tile(s_tiled, [1, 1, self.y_vocabulary_size]) # Shape: [B, N, Vy]
-    py_xa = tf.multiply(s_tiled, py_x, name='s1') + tf.multiply(1-s_tiled, py_y, name='s2')
+    # Here we marginalise over S
+    py_x = tf.multiply(s_tiled, py_x, name='s1') + tf.multiply(1-s_tiled, py_y, name='s2')
 
     # This calculates the accuracy, i.e. how many predictions we got right.
     predictions = tf.argmax(py_x, axis=2)
@@ -324,13 +325,14 @@ class NeuralIBM1Model:
           break
         fprev = j
         sj = s[b,j]
-        # if b in range(100): print(sj)
+        # if b in range(20): print(sj)
         c = int(np.random.uniform() < sj) # sample c ~ Bernouilli(sj)
         if c == 0: # then we align
-            probs = py_xa[b, 1: , y[b,j]] # y[b,j] means only the word f_j in the sentence b
+            probs = py_xa[b, : , y[b,j]] # y[b,j] means only the word f_j in the sentence b
             a_j = probs.argmax()
             p_j = probs[a_j]
         if c == 1: # then we `insert` (i.e. NULL align - see NLP2 blog post)
+            # if b in range(20): print('Null aligned')
             a_j = 0 # NULL align
             p_j = 1
 
