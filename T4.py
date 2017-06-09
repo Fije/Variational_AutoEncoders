@@ -314,13 +314,10 @@ class NeuralIBM1Model:
     # approx = tf.add_n([tf.reciprocal(m + alpha*beta) * Beta(m * tf.reciprocal(alpha), beta) for m in range(1,10)])
     alpha = alpha + 0.0001 # to avoid division by 0
     beta = beta + 0.0001 # to avoid division by 0
-    # approx = tf.add_n([tf.reciprocal(m + alpha*beta) * tf.exp(tf.lbeta([m*tf.reciprocal(alpha), beta])) for m in range(1,10)])
-    approx = tf.add_n([tf.reciprocal(m + alpha*beta) * 0.01/m for m in range(1,10)]) # Beta(a,b) missing! Cannot find it in TF...
-    
+    approx = tf.add_n([tf.reciprocal(m + alpha*beta) * tf.exp(tf.lbeta([m*tf.reciprocal(alpha), beta])) for m in range(1,10)])    
     first = tf.multiply(tf.div(alpha - a, alpha), -euler - tf.digamma(beta) - tf.reciprocal(beta))
     self.first = first
-    # second = tf.log(tf.multiply(alpha, beta)) + tf.lbeta([alpha, beta]) - tf.multiply(beta - 1, tf.reciprocal(beta))
-    second = tf.log(tf.multiply(alpha, beta)) - tf.multiply(beta - 1, tf.reciprocal(beta)) # Beta(a,b) missing! Cannot find it in TF...
+    second = tf.log(tf.multiply(alpha, beta)) + tf.lbeta([alpha, beta]) - tf.multiply(beta - 1, tf.reciprocal(beta))
     self.second = second
     third = tf.multiply(tf.multiply(b - 1, beta), approx)
     self.third = third
