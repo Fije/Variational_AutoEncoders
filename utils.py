@@ -46,10 +46,10 @@ def iterate_minibatches(corpus, batch_size=16):
       batch = []
 
       
-def prepare_data(batch, vocabulary_x, vocabulary_y):
+def prepare_data(batch, vocabulary_x, vocabulary_y, add_xnull=True):
   """Prepare batch of sentences for TensorFlow input."""
   batch_x, batch_y = zip(*batch)
-  x = vocabulary_x.batch2tensor(batch_x, add_null=True, add_end_symbol=False)      
+  x = vocabulary_x.batch2tensor(batch_x, add_null=add_xnull, add_end_symbol=False)      
   y = vocabulary_y.batch2tensor(batch_y, add_null=False, add_end_symbol=False)    
   return x, y
 

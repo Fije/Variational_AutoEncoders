@@ -16,9 +16,10 @@ class NeuralIBM1Trainer:
                test_e_path, test_f_path, test_wa,
                num_epochs=5,
                batch_size=16, max_length=30, lr=0.1, lr_decay=0.001, session=None,
-               max_num=np.inf):
+               max_num=np.inf,
+               add_xnull=True):
     """Initialize the trainer with a model."""
-
+    
     self.model = model
     self.train_e_path = train_e_path
     self.train_f_path = train_f_path
@@ -48,6 +49,7 @@ class NeuralIBM1Trainer:
         smart_reader(train_e_path,max_num=max_num),
         smart_reader(train_f_path,max_num=max_num),
         max_length=max_length))
+    # print("Training on {} sentences".format(len(self.corpus)))
     self.dev_corpus = list(bitext_reader(
         smart_reader(dev_e_path),
         smart_reader(dev_f_path)))
@@ -81,7 +83,7 @@ class NeuralIBM1Trainer:
 
       # shuffle data set every epoch
       print("Shuffling training data")
-      random.shuffle(self.corpus)
+      # random.shuffle(self.corpus)
 
       loss = 0.0
       accuracy_correct = 0
@@ -95,34 +97,13 @@ class NeuralIBM1Trainer:
         lr_t = self.lr * (1 + self.lr * self.lr_decay * steps)**-1
 
         x, y = prepare_data(batch, self.model.x_vocabulary,
-                            self.model.y_vocabulary)
-
-        # TIM: this line removes the last column (because the last word does
-        #      not preceed any other word) and adds a 0-column at the left end
-        #      because the first word has no predecessor.
-        yp = np.hstack((np.zeros((y.shape[0], 1)), y[:, : -1]))
-
-        while yp.shape[1] < x.shape[1]:
-            yp = np.hstack((yp, np.zeros((y.shape[0], 1))))
-
-        yp = yp[:, : x.shape[1]]
-
-        # print(x.shape, yp.shape)
-        # return
-
-        # If you want to see the data that goes into the model during training
-        # you may uncomment this.
-        #if batch_id % 1000 == 0:
-        #    print(" ".join([str(t) for t in x[0]]))
-        #    print(" ".join([str(t) for t in y[0]]))
-        #    print(" ".join([self.model.x_vocabulary.get_token(t) for t in x[0]]))
-        #    print(" ".join([self.model.y_vocabulary.get_token(t) for t in y[0]]))
+                            self.model.y_vocabulary,
+                            add_xnull=True)
 
         # input to the TF graph
         feed_dict = {
           self.lr_ph:    lr_t,
           self.model.x:  x,
-          self.model.yp: yp,
           self.model.y:  y
         }
 
@@ -134,11 +115,35 @@ class NeuralIBM1Trainer:
           "acc_total"   : self.model.accuracy_total,
           "pa_x"        : self.model.pa_x,
           "py_xa"       : self.model.py_xa,
-          "py_x"        : self.model.py_x
+          "py_x"        : self.model.py_x,
+          "yp"          : self.model.y_p,
         }
 
         res = self.session.run(fetches, feed_dict=feed_dict)
-
+        # print(y)
+        # print()
+        # print(res["yp"])
+        # print()
+        # pprint(res["yp_shaped1"])
+        # print("y-shaped")
+        # pprint(res["yp_shaped"])
+        # print()
+        # pprint(res["yp_embedded"])
+        # print()
+        # print()
+        # print(x)
+        # print()
+        # print("x-shaped")
+        # pprint(res["xp_shaped"])
+        # print()
+        # pprint(res["xp_embedded"])
+        # print()
+        # print("concatted")
+        # pprint(res["concatted"])
+        # print(res["concatted"].shape)
+        # print(res["embedded"].shape)
+        # print()
+        # print()
         loss += res["loss"]
         accuracy_correct += res["acc_correct"]
         accuracy_total += res["acc_total"]
@@ -162,12 +167,6 @@ class NeuralIBM1Trainer:
           loss / float(epoch_steps),
           accuracy_correct / float(accuracy_total),
           val_aer, val_acc))
-
-      # let's see if this is correct:
-      # the 'loss' is the sum of the losses of each minibatch (so: loss = true_loss * epoch_steps)
-      # and likelihood = - len(corpus) * true_loss = - batch_size * epoch_steps * true_loss = - batch_size * loss
-      # other_likelihood = - loss * self.batch_size
-      # other_likelihoods.append(other_likelihood)
 
       # evaluate training-set likelihoods
       train_likelihood = self.likelihood(mode='train')
@@ -209,19 +208,8 @@ class NeuralIBM1Trainer:
       # Dynamic learning rate, cf. Bottou (2012), Stochastic gradient descent tricks.
       lr_t = 0
 
-      # TIM: this line removes the last column (because the last word does
-      #      not preceed any other word) and adds a 0-column at the left end
-      #      because the first word has no predecessor.
-      yp = np.hstack((np.zeros((y.shape[0], 1)), y[:, : -1]))
-
-      while yp.shape[1] < x.shape[1]:
-          yp = np.hstack((yp, np.zeros((y.shape[0], 1))))
-
-      yp = yp[:, : x.shape[1]]
-
       feed_dict = {
         self.model.x:  x,
-        self.model.yp: yp,
         self.model.y:  y
       }
 
@@ -238,8 +226,5 @@ class NeuralIBM1Trainer:
     likelihood = - loss * batch_size # now loss is
 
     return likelihood
-
-
-
 
 

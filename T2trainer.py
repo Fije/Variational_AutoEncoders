@@ -98,33 +98,10 @@ class NeuralIBM1Trainer:
         x, y = prepare_data(batch, self.model.x_vocabulary,
                             self.model.y_vocabulary)
 
-        # # TIM: this line removes the last column (because the last word does
-        # #      not preceed any other word) and adds a 0-column at the left end
-        # #      because the first word has no predecessor.
-        # yp = np.hstack((np.zeros((y.shape[0], 1)), y[:, : -1]))
-        # # yp = np.hstack((np.zeros((y.shape[0], 1)), y[:, : ]))
-
-        # while yp.shape[1] < x.shape[1]:
-        #     yp = np.hstack((yp, np.zeros((y.shape[0], 1))))
-
-        # yp = yp[:, : x.shape[1]]
-
-        # print(x.shape, yp.shape)
-        # return
-
-        # If you want to see the data that goes into the model during training
-        # you may uncomment this.
-        #if batch_id % 1000 == 0:
-        #    print(" ".join([str(t) for t in x[0]]))
-        #    print(" ".join([str(t) for t in y[0]]))
-        #    print(" ".join([self.model.x_vocabulary.get_token(t) for t in x[0]]))
-        #    print(" ".join([self.model.y_vocabulary.get_token(t) for t in y[0]]))
-
         # input to the TF graph
         feed_dict = {
           self.lr_ph:    lr_t,
           self.model.x:  x,
-          # self.model.yp: yp,
           self.model.y:  y
         }
 
@@ -162,10 +139,6 @@ class NeuralIBM1Trainer:
         print()
         print()
         print(x)
-        # print()
-        # pprint(res["xp_shaped1"])
-        # print()
-        # pprint(res["xp_shaped2"])
         print()
         print("x-shaped")
         pprint(res["xp_shaped"])
@@ -201,12 +174,6 @@ class NeuralIBM1Trainer:
           loss / float(epoch_steps),
           accuracy_correct / float(accuracy_total),
           val_aer, val_acc))
-
-      # let's see if this is correct:
-      # the 'loss' is the sum of the losses of each minibatch (so: loss = true_loss * epoch_steps)
-      # and likelihood = - len(corpus) * true_loss = - batch_size * epoch_steps * true_loss = - batch_size * loss
-      # other_likelihood = - loss * self.batch_size
-      # other_likelihoods.append(other_likelihood)
 
       # evaluate training-set likelihoods
       train_likelihood = self.likelihood(mode='train')

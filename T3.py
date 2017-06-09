@@ -17,13 +17,12 @@ class NeuralIBM1Model:
   def __init__(self, batch_size=8,
                x_vocabulary=None, y_vocabulary=None,
                emb_dim=32, mlp_dim=64,
-               session=None, mode='concat'):
-
+               session=None):
+  
     self.batch_size = batch_size
     self.emb_dim = emb_dim
-    self.mlp_dim = mlp_dim
 
-    self.mode = mode
+    self.mlp_dim = mlp_dim
 
     self.x_vocabulary = x_vocabulary
     self.y_vocabulary = y_vocabulary
@@ -52,29 +51,47 @@ class NeuralIBM1Model:
     # TIM: we need to double the input embedding size if the mode is concat.
     emb_dim = self.emb_dim
 
-    if self.mode == 'concat':
-        emb_dim += self.emb_dim
-
     with tf.variable_scope("MLP") as scope:
-      self.mlp_W_ = tf.get_variable(
-        name="W_", initializer=glorot_uniform(),
+      # first layer for t
+      self.mlp_Wt_ = tf.get_variable(
+        name="Wt_", initializer=glorot_uniform(),
         shape=[emb_dim, self.mlp_dim])
 
-      self.mlp_b_ = tf.get_variable(
-        name="b_", initializer=tf.zeros_initializer(),
+      self.mlp_bt_ = tf.get_variable(
+        name="bt_", initializer=tf.zeros_initializer(),
         shape=[self.mlp_dim])
 
-      self.mlp_W = tf.get_variable(
-        name="W", initializer=glorot_uniform(),
+      # first layer for i and s
+      self.mlp_Wis_ = tf.get_variable(
+        name="Wis_", initializer=glorot_uniform(),
+        shape=[emb_dim, self.mlp_dim])
+
+      self.mlp_bis_ = tf.get_variable(
+        name="bis_", initializer=tf.zeros_initializer(),
+        shape=[self.mlp_dim])
+
+      # layer for translation P(F|E)
+      self.mlp_W_t = tf.get_variable(
+        name="W_t", initializer=glorot_uniform(),
         shape=[self.mlp_dim, self.y_vocabulary_size])
 
-      self.mlp_b = tf.get_variable(
-        name="b", initializer=tf.zeros_initializer(),
+      self.mlp_b_t = tf.get_variable(
+        name="b_t", initializer=tf.zeros_initializer(),
         shape=[self.y_vocabulary_size])
 
+      # layer for insertion P(F|Fprev)
+      self.mlp_W_i = tf.get_variable(
+        name="W_i", initializer=glorot_uniform(),
+        shape=[self.mlp_dim, self.y_vocabulary_size])
+
+      self.mlp_b_i = tf.get_variable(
+        name="b_i", initializer=tf.zeros_initializer(),
+        shape=[self.y_vocabulary_size])
+
+      # layer for collocation P(C|Fprev)
       self.mlp_W_s = tf.get_variable(
         name="W_s", initializer=glorot_uniform(),
-        shape=[emb_dim, 1])
+        shape=[self.mlp_dim, 1])
 
       self.mlp_b_s = tf.get_variable(
         name="b_s", initializer=tf.zeros_initializer(),
@@ -97,32 +114,35 @@ class NeuralIBM1Model:
       name="y_embeddings", initializer=tf.random_uniform_initializer(),
       shape=[self.y_vocabulary_size, self.emb_dim])
 
+    emb_dim = self.emb_dim
+
     # Now we start defining our graph.
 
-    # This looks up the embedding vector for each word given the word IDs in self.x.
-    # Shape: [B, M, emb_dim] where B is batch size, M is (longest) source sentence length.
-    x_embedded = tf.nn.embedding_lookup(x_embeddings, self.x)
-
-    # TIM: Now we need to look up the previous word in the same vocabulary.
-    # Shape: [B, N, emb_dim]
-    yp_embedded = tf.nn.embedding_lookup(y_embeddings, self.yp)
-
     # 2. Now we define the generative model P(Y | X=x)
-
+    
     # first we need to know some sizes from the current input data
     batch_size = tf.shape(self.x)[0]
     longest_x = tf.shape(self.x)[1]  # longest M
     longest_y = tf.shape(self.y)[1]  # longest N
+
+    # Input yp
+    twos = 2*tf.ones([tf.shape(self.y)[0], 1], tf.int64) # prepend all the sentences with '2', the code for <S>
+    yp = tf.concat([twos, self.y[:,:-1]], axis=1, name='concat-twos')
+    self.y_p = yp
+    yp_embedded = tf.nn.embedding_lookup(y_embeddings, yp) # Shape: [B, N, emb_dim]
+    self.yp_embedded = yp_embedded
+
+    # Input x
+    x_embedded = tf.nn.embedding_lookup(x_embeddings, self.x) # Shape: [B, M, emb_dim]
+    
 
     # It's also useful to have masks that indicate what
     # values of our batch we should ignore.
     # Masks have the same shape as our inputs, and contain
     # 1.0 where there is a value, and 0.0 where there is padding.
     x_mask  = tf.cast(tf.sign(self.x), tf.float32)    # Shape: [B, M]
-    yp_mask = tf.cast(tf.sign(self.yp), tf.float32)   # Shape: [B, M]
     y_mask  = tf.cast(tf.sign(self.y), tf.float32)    # Shape: [B, N]
     x_len   = tf.reduce_sum(tf.sign(self.x), axis=1)  # Shape: [B]
-    yp_len  = tf.reduce_sum(tf.sign(self.yp), axis=1) # Shape: [B]
     y_len   = tf.reduce_sum(tf.sign(self.y), axis=1)  # Shape: [B]
 
     # 2.a Build an alignment model P(A | X, M, N)
@@ -130,9 +150,7 @@ class NeuralIBM1Model:
     # This just gives you 1/length_x (already including NULL) per sample.
     # i.e. the lengths are the same for each word y_1 .. y_N.
     lengths  = tf.expand_dims(x_len, -1)  # Shape: [B, 1]
-    plengths = tf.expand_dims(yp_len, -1) # Shape: [B, 1]
     pa_x     = tf.div(x_mask, tf.cast(lengths, tf.float32))   # Shape: [B, M]
-    pa_yp    = tf.div(yp_mask, tf.cast(plengths, tf.float32)) # Shape: [B, M]
 
     # We now have a matrix with 1/M values.
     # For a batch of 2 setencnes, with lengths 2 and 3:
@@ -144,7 +162,6 @@ class NeuralIBM1Model:
     # matrix N times, and for that we create a new dimension
     # in between the current ones (dimension 1).
     pa_x  = tf.expand_dims(pa_x, 1)  # Shape: [B, 1, M]
-    pa_yp = tf.expand_dims(pa_yp, 1) # Shape: [B, 1, M]
 
     #  pa_x = [[[1/2 1/2   0]]
     #          [[1/3 1/3 1/3]]]
@@ -152,7 +169,8 @@ class NeuralIBM1Model:
 
     # Now we perform the tiling:
     pa_x  = tf.tile(pa_x, [1, longest_y, 1])  # [B, N, M]
-    pa_yp = tf.tile(pa_yp, [1, longest_y, 1]) # [B, N, M]
+
+    # pa_x = tf.tile(y_embedded, [1, 1, longest_y])
 
     # Result:
     #  pa_x = [[[1/2 1/2   0]
@@ -160,56 +178,40 @@ class NeuralIBM1Model:
     #           [[1/3 1/3 1/3]
     #           [1/3 1/3 1/3]]]
 
-    # 2.b P(Y | X, A) = P(Y | X_A)
+    # The MLP
 
-    # First we make the input to the MLP 2-D.
-    # Every output row will be of size Vy, and after a softmax
-    # will sum to 1.0.
-
-    # TIM: this is where we either concatenate the two word embeddings
-    #      (x and yp) or use a non-linear transformation (gate). We also need
-    #      to double the input embedding size if the mode is concat.
-    emb_dim = self.emb_dim
-    embedded = x_embedded
-
-    if self.mode == 'concat':
-        # Concatenate the word embeddings.
-        # Shapes [B, M, emb_dim] and [B, M, emb_dim] give [B, M, 2*emb_dim]
-        # since in preprocessing we set the dim of yp  M=N (hmm... seems not correct to me -D)
-        embedded = tf.concat([ x_embedded, yp_embedded ], axis = 2)
-
-        # Pass the concatenated embedding through an affine transformation and
-        # an elementwise nonlinearity (tanh).
-        # embedding = tf.tanh(embedded)
-        emb_dim += self.emb_dim
-        
-    elif self.mode == 'gate':
-        # As a function of the embedding of the previous f, compute a gate value
-        # 0 \leq s \leq 1. For this, we will use ReLU.
-        s = tf.map_fn(lambda x: tf.matmul(x, self.mlp_W_s), yp_embedded)
-        s = s + self.mlp_b_s
-        s = tf.sigmoid(s)
-
-        x_embedded  = tf.tanh(x_embedded)
-        yp_embedded = tf.tanh(yp_embedded)
-
-        embedded = tf.multiply(yp_embedded, s) + tf.multiply(x_embedded, 1 - s)
-
-    mlp_input = tf.reshape(embedded, [batch_size * longest_x, emb_dim])
-
-    # Here we apply the MLP to our input.
-    h = tf.matmul(mlp_input, self.mlp_W_) + self.mlp_b_  # affine transformation
-    h = tf.tanh(h)                                       # non-linearity
-    h = tf.matmul(h, self.mlp_W) + self.mlp_b            # affine transformation [B * M, Vy]
-
-    # You could also use TF fully connected to create the MLP.
-    # Then you don't have to specify all the weights and biases separately.
-    #h = tf.contrib.layers.fully_connected(mlp_input, self.mlp_dim, activation_fn=tf.tanh, trainable=True)
-    #h = tf.contrib.layers.fully_connected(h, self.y_vocabulary_size, activation_fn=None, trainable=True)
-
+    # This is for P(F|E), translation t
+    mlp_input = tf.reshape(x_embedded, [batch_size * longest_x, emb_dim])
+    h_t = tf.matmul(mlp_input, self.mlp_Wt_, name='x1') + self.mlp_bt_ # Shape [B*M, emb_dim]
+    h_t  = tf.tanh(h_t)
+    h_t = tf.matmul(h_t, self.mlp_W_t, name='x2') + self.mlp_b_t # Shape [B*M, emb_dim]
     # Now we perform a softmax which operates on a per-row basis.
-    py_xa = tf.nn.softmax(h)
-    py_xa = tf.reshape(py_xa, [batch_size, longest_x, self.y_vocabulary_size])
+    py_xa = tf.nn.softmax(h_t)
+    # This is P(F|E)
+    py_xa = tf.reshape(py_xa, [batch_size, longest_x, self.y_vocabulary_size]) # Shape [B, M, Vy]
+
+    # This is for P(F|Fprev) and P(C|Fprev), insertion i and collocation c
+    # Note: Shared first layer!
+    mlp_input = tf.reshape(yp_embedded, [batch_size * longest_y, emb_dim])
+    h_is = tf.matmul(mlp_input, self.mlp_Wis_, name='y1') + self.mlp_bis_ # Shape [B*N, emb_dim]
+    h_is  = tf.tanh(h_is)
+    # This is P(F|Fprev) insertion i
+    h_i = tf.matmul(h_is, self.mlp_W_i, name='y2') + self.mlp_b_i # Shape [B*N, emb_dim]
+    py_y  = tf.nn.softmax(h_i) # Shape: [B*N, Vy]
+    py_y = tf.reshape(py_y, [batch_size, longest_y, self.y_vocabulary_size]) # Shape [B, N, Vy]
+    # This is s(Fprev) for P(C|Fprev) = Bern(s(Fprev))
+    h_s = tf.matmul(h_is, self.mlp_W_s, name='3')
+    h_s = h_s + self.mlp_b_s
+    s = tf.sigmoid(h_s)
+    s = tf.squeeze(s) # get rid of trainling 1-dimension
+    s = tf.reshape(s, [batch_size, longest_y])
+
+    # alpha = tf.matmul(yp, self.alpha_W) + self.alpha_b  # [B * M, z_dim]
+    # beta = tf.matmul(yp, self.beta_W) + self.beta_b  # [B * M, z_dim]
+    # # IMPORTANT: used for sampling gate values s:
+    # a = tf.matmul(yp, self.a_W) + self.a_b  # [B * M, z_dim]
+    # b = tf.matmul(yp, self.b_W) + self.b_b  # [B * M, z_dim]
+
 
     # 2.c Marginalise alignments: \sum_a P(a|x) P(Y|x,a)
 
@@ -220,14 +222,20 @@ class NeuralIBM1Model:
     #
     # We matrix-multiply:
     #   pa_x       Shape: [B, N, *M*]
+    #       pa_x       Shape: [B, N, *N*M*]
     # and
     #   py_xa      Shape: [B, *M*, Vy]
+    #       py_xa      Shape: [B, *N*M*, Vy]
     # to get
     #   py_x  Shape: [B, N, Vy]
     #
     # Note: P(y|x) = prod_j p(y_j|x) = prod_j sum_aj p(aj|m)p(y_j|x_aj)
-    #
-    py_x = tf.matmul(pa_x, py_xa)  # Shape: [B, N, Vy]
+    py_x = tf.matmul(pa_x, py_xa, name='3')  # Shape: [B, N, Vy]
+
+    # Read the equation in Theory 2.2 carefully. Then you will see that this is correct.
+    s_tiled = tf.expand_dims(s, 2) # Shape: [B, N, 1]
+    s_tiled = tf.tile(s_tiled, [1, 1, self.y_vocabulary_size]) # Shape: [B, N, Vy]
+    py_xa = tf.multiply(s_tiled, py_x, name='s1') + tf.multiply(1-s_tiled, py_y, name='s2')
 
     # This calculates the accuracy, i.e. how many predictions we got right.
     predictions = tf.argmax(py_x, axis=2)
@@ -239,43 +247,19 @@ class NeuralIBM1Model:
 
     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
       labels=tf.reshape(self.y, [-1]),
-      logits=tf.log(tf.reshape(py_x,[batch_size * longest_y, self.y_vocabulary_size])),
+      logits=tf.log(tf.reshape(py_x,[batch_size * longest_y, self.y_vocabulary_size], name='lastfucker')),
       name="logits"
     )
     cross_entropy = tf.reshape(cross_entropy, [batch_size, longest_y])
     cross_entropy = tf.reduce_sum(cross_entropy * y_mask, axis=1)
     cross_entropy = tf.reduce_mean(cross_entropy, axis=0)
 
-    # ---------- #
-    # LIKELIHOOD #
-    # ---------- #
-    # See section 1.2 of the theory, between Q3 and Q4: the cross-entropy
-    # is the same as the average negative log-likelihood.
-    # That is, if sum_{s \in S} L(theta|s) is the likelihood, then the cross-entropy is
-    # given by -1/S sum_{s \in S} L(theta|s).
-    # See the code below for W&J's attempt to code this by hand! You see that
-    # in the lines
-    #
-    #   y_one_hot = tf.one_hot(self.y, depth=self.y_vocabulary_size)
-    #   cross_entropy = tf.reduce_sum(y_one_hot * tf.log(py_x), axis=2)
-    #
-    # they have tried to only sum the probs in py_x the Vy dimension that are
-    # in the actual sentences y.
-
-    # Now we define our cross entropy loss
-    # Play with this if you want to try and replace TensorFlow's CE function.
-    # Disclaimer: untested code
-#     y_one_hot = tf.one_hot(self.y, depth=self.y_vocabulary_size)     # [B, N, Vy]
-#     cross_entropy = tf.reduce_sum(y_one_hot * tf.log(py_x), axis=2)  # [B, N]
-#     cross_entropy = tf.reduce_sum(cross_entropy * y_mask, axis=1)    # [B]
-#     cross_entropy = -tf.reduce_mean(cross_entropy)  # scalar
-#     Daan's:
-#     likelihood = tf.reduce_sum(cross_entropy * y_mask)    # scalar
-
 
     self.pa_x = pa_x
     self.py_x = py_x
+    self.py_y = py_y
     self.py_xa = py_xa
+    self.s = s
     self.loss = cross_entropy
     self.predictions = predictions
     self.accuracy = acc
@@ -301,19 +285,11 @@ class NeuralIBM1Model:
       accuracy_correct += acc_correct
       accuracy_total += acc_total
 
-#       if batch_id == 0:
-#         print(batch[0])
-#      s = 0
-
       for alignment, N, (sure, probable) in zip(align, y_len, ref_iterator):
         # the evaluation ignores NULL links, so we discard them
         # j is 1-based in the naacl format
         pred = set((aj, j) for j, aj in enumerate(alignment[:N], 1) if aj > 0)
         metric.update(sure=sure, probable=probable, predicted=pred)
- #       print(batch[s])
- #       print(alignment[:N])
- #       print(pred)
- #       s +=1
 
     accuracy = accuracy_correct / float(accuracy_total)
     return metric.aer(), accuracy
@@ -322,29 +298,23 @@ class NeuralIBM1Model:
   def get_viterbi(self, x, y):
     """Returns the Viterbi alignment for (x, y)"""
 
-    # TODO: this should not actually use y itself! Instead, we need to retrieve
-    #       each previous prediction from the NN and then feed it to when
-    #       predicting the next word.
-    yp = np.zeros((y.shape[0], 1)) # , y[:, : -1]))
-
-    while yp.shape[1] < x.shape[1]:
-        yp = np.hstack((yp, np.zeros((y.shape[0], 1))))
-
-    yp = yp[:, : x.shape[1]]
-
     feed_dict = {
       self.x: x, # English
       self.y: y, # French
-      self.yp: yp
     }
 
     # run model on this input
-    py_xa, acc_correct, acc_total = self.session.run(
-      [self.py_xa, self.accuracy_correct, self.accuracy_total],
-      feed_dict=feed_dict)
+    py_xa, py_y, s, acc_correct, acc_total = self.session.run(
+      [self.py_xa,
+       self.py_y,
+       self.s,
+       self.accuracy_correct, 
+       self.accuracy_total],
+       feed_dict=feed_dict)
 
     # things to return
     batch_size, longest_y = y.shape
+    _, longest_x = x.shape
     alignments = np.zeros((batch_size, longest_y), dtype="int64")
     probabilities = np.zeros((batch_size, longest_y), dtype="float32")
 
@@ -352,12 +322,20 @@ class NeuralIBM1Model:
       for j, french_word in enumerate(sentence):
         if french_word == 0:  # Padding
           break
-
-        probs = py_xa[b, :, y[b, j]]
-        a_j = probs.argmax()
-        p_j = probs[a_j]
+        fprev = j
+        sj = s[b,j]
+        # if b in range(100): print(sj)
+        c = int(np.random.uniform() < sj) # sample c ~ Bernouilli(sj)
+        if c == 0: # then we align
+            probs = py_xa[b, 1: , y[b,j]] # y[b,j] means only the word f_j in the sentence b
+            a_j = probs.argmax()
+            p_j = probs[a_j]
+        if c == 1: # then we `insert` (i.e. NULL align - see NLP2 blog post)
+            a_j = 0 # NULL align
+            p_j = 1
 
         alignments[b, j] = a_j
         probabilities[b, j] = p_j
+
 
     return alignments, probabilities, acc_correct, acc_total
