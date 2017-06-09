@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 from aer import read_naacl_alignments, AERSufficientStatistics
 from utils import iterate_minibatches, prepare_data
+import scipy as sp
 
 # for TF 1.1
 import tensorflow
@@ -9,7 +10,6 @@ try:
   from tensorflow.contrib.keras.initializers import glorot_uniform
 except:  # for TF 1.0
   from tensorflow.contrib.layers import xavier_initializer as glorot_uniform
-
 
 class NeuralIBM1Model:
   """Our Neural IBM1 model."""
@@ -238,12 +238,15 @@ class NeuralIBM1Model:
     b = tf.exp(b)
     b = tf.squeeze(b)
     # This is for the approxiation of the posterior p(Z|X) using Kuma(alpha, beta)
-    alpha = tf.matmul(h_is, self.alpha_W) + self.alpha_b  # [B*M, 1]
+    alpha = tf.matmul(h_is, self.alpha_W) + self.alpha_b  # [B*N, 1]
     alpha = tf.exp(alpha)
     alpha = tf.squeeze(alpha)
-    beta = tf.matmul(h_is, self.beta_W) + self.beta_b  # [B*M, 1]
+    self.alpha = tf.reshape(alpha, [batch_size, longest_y])
+    beta = tf.matmul(h_is, self.beta_W) + self.beta_b  # [B*N, 1]
     beta = tf.exp(beta)
     beta = tf.squeeze(beta)
+    self.beta = tf.reshape(beta, [batch_size, longest_y])
+
 
 
     # ##############################################
@@ -305,15 +308,22 @@ class NeuralIBM1Model:
     # Beta = tf.contrib.distributions.Beta(a,b) # constructs distributions same shape as a (and b)
     # s = Beta.sample() # generates a single sample for each of the distributions
 
+
+
     euler = 0.5772156649
     # approx = tf.add_n([tf.reciprocal(m + alpha*beta) * Beta(m * tf.reciprocal(alpha), beta) for m in range(1,10)])
-    approx = tf.add_n([tf.reciprocal(m + alpha*beta) * 1 for m in range(1,10)])
-    first = tf.multiply(tf.div(alpha - a, alpha+0.0001), -euler - tf.digamma(beta) - tf.reciprocal(beta+0.0001))
+    alpha = alpha + 0.0001 # to avoid division by 0
+    beta = beta + 0.0001 # to avoid division by 0
+    # approx = tf.add_n([tf.reciprocal(m + alpha*beta) * tf.exp(tf.lbeta([m*tf.reciprocal(alpha), beta])) for m in range(1,10)])
+    approx = tf.add_n([tf.reciprocal(m + alpha*beta) * 0.01/m for m in range(1,10)]) # Beta(a,b) missing! Cannot find it in TF...
     
-    second = tf.log(tf.multiply(alpha, beta)) - tf.multiply(beta - 1, tf.reciprocal(beta+0.0001)) # Beta(a,b) missing! Cannot find it in TF...
-    
-
+    first = tf.multiply(tf.div(alpha - a, alpha), -euler - tf.digamma(beta) - tf.reciprocal(beta))
+    self.first = first
+    # second = tf.log(tf.multiply(alpha, beta)) + tf.lbeta([alpha, beta]) - tf.multiply(beta - 1, tf.reciprocal(beta))
+    second = tf.log(tf.multiply(alpha, beta)) - tf.multiply(beta - 1, tf.reciprocal(beta)) # Beta(a,b) missing! Cannot find it in TF...
+    self.second = second
     third = tf.multiply(tf.multiply(b - 1, beta), approx)
+    self.third = third
     kl = first + second + third
     kl = tf.reshape(kl, tf.shape(self.y), name='KL-reshape')  # reshape back to [B, N]
     self.kl = tf.reduce_mean(tf.reduce_sum(kl * y_mask, axis=1), axis=0)
@@ -400,12 +410,14 @@ class NeuralIBM1Model:
     }
 
     # run model on this input
-    py_xa, py_y, s, acc_correct, acc_total = self.session.run(
+    py_xa, py_y, s, acc_correct, acc_total, alpha, beta = self.session.run(
       [self.py_xa,
        self.py_y,
        self.s,
        self.accuracy_correct, 
-       self.accuracy_total],
+       self.accuracy_total,
+       self.alpha,
+       self.beta],
        feed_dict=feed_dict)
 
     # things to return
@@ -419,8 +431,13 @@ class NeuralIBM1Model:
         if french_word == 0:  # Padding
           break
         fprev = j
-        sj = s[b,j]
+        alphaj = alpha[b,j] + 0.0001
+        betaj = beta[b,j] + 0.0001
         # if b in range(20): print(sj)
+        # Here we use the expectation of a Kuma(alpha, beta) distr
+        # with our estimated alpha and beta:
+        # s = E[S] = beta*Gamma(1+1/alpha)Gamma(beta) / Gamma(1+1/alpha+beta)
+        sj = (betaj*sp.special.gamma(1+1/(alphaj))*sp.special.gamma(betaj)) / sp.special.gamma(1+1/(alphaj)+betaj)
         c = int(np.random.uniform() < sj) # sample c ~ Bernouilli(sj)
         if c == 0: # then we align
             probs = py_xa[b, : , y[b,j]] # y[b,j] means only the word f_j in the sentence b

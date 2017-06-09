@@ -119,6 +119,9 @@ class NeuralIBM1Trainer:
           "py_xa"       : self.model.py_xa,
           "py_x"        : self.model.py_x,
           "yp"          : self.model.y_p,
+          "first"       : self.model.first,
+          "second"      : self.model.second,
+          "third"       : self.model.third,
         }
 
         res = self.session.run(fetches, feed_dict=feed_dict)
@@ -156,7 +159,9 @@ class NeuralIBM1Trainer:
         if batch_id % 100 == 0:
           print("Iter {:5d} loss {:6f} ce {:1.6f} kl {:2.6f} accuracy {:1.2f} lr {:2.6f}".format(
             batch_id, res["loss"], res["ce"], res["kl"], batch_accuracy, lr_t))
-
+          
+          # print("fist {0} second {1} third {2}".format(res["first"],res["second"],res["third"]))
+      
       # evaluate on development and test set
       val_aer, val_acc = self.model.evaluate(self.dev_corpus, self.dev_wa)
       test_aer, test_acc = self.model.evaluate(self.test_corpus, self.test_wa)
